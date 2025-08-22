@@ -7,11 +7,6 @@ from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# To run this code locally, you would need to install Flask and the Firebase Admin SDK.
-# Use the following commands in your terminal:
-# pip install Flask
-# pip install firebase-admin
-
 # Initialize Firebase Admin SDK
 # In a real application, you would load your service account key here.
 # For this conceptual example, we'll assume Firebase is already set up.
