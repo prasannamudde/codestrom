@@ -1,0 +1,904 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, signOut } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
+
+// Tailwind CSS classes for consistent styling
+const containerClass = 'min-h-screen bg-gray-50 flex flex-col items-center p-4 font-sans';
+const headerClass = 'flex justify-between items-center w-full max-w-7xl mx-auto py-4 px-6 md:px-8 bg-white rounded-xl shadow-lg mt-4';
+const logoClass = 'flex items-center space-x-2 text-green-700 font-bold text-xl';
+const buttonClass = 'px-4 py-2 rounded-full text-white font-semibold transition-transform duration-200 transform hover:scale-105 shadow-md';
+const cardClass = 'bg-white rounded-xl shadow-xl p-8 transition-transform duration-300 transform hover:scale-105';
+const inputClass = 'w-full p-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500 transition duration-200';
+const formButtonClass = 'w-full py-3 mt-4 rounded-xl text-white font-bold transition-transform duration-200 transform hover:scale-105';
+
+// Helper function to simulate a circular progress bar for the countdown
+const CircularProgress = ({ value, maxValue, label }) => {
+  const radius = 50;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (value / maxValue) * circumference;
+  const percentage = (value / maxValue) * 100;
+
+  return (
+    <div className="relative flex items-center justify-center w-36 h-36">
+      <svg className="w-full h-full transform -rotate-90">
+        <circle
+          className="text-gray-200"
+          strokeWidth="8"
+          stroke="currentColor"
+          fill="transparent"
+          r={radius}
+          cx="50%"
+          cy="50%"
+        />
+        <circle
+          className="text-green-500 transition-all duration-700 ease-in-out"
+          strokeWidth="8"
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          stroke="currentColor"
+          fill="transparent"
+          r={radius}
+          cx="50%"
+          cy="50%"
+        />
+      </svg>
+      <div className="absolute flex flex-col items-center justify-center">
+        <span className="text-3xl font-bold text-green-700">{value}</span>
+        <span className="text-xs text-gray-500 uppercase">{label}</span>
+      </div>
+    </div>
+  );
+};
+
+// Main App component
+export default function App() {
+  // State variables for application flow and data
+  const [page, setPage] = useState('landing'); // 'landing', 'login', 'main'
+  const [subPage, setSubPage] = useState('home'); // 'home', 'about', 'contact', 'profile', 'crop-details', etc.
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState(null);
+  const [memberCount, setMemberCount] = useState(0);
+  const [db, setDb] = useState(null);
+  const [auth, setAuth] = useState(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Get Firebase globals from the environment
+  const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+  const firebaseConfig = typeof _firebase_config !== 'undefined' ? JSON.parse(_firebase_config) : {};
+  const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+  // Initialize Firebase and set up auth listener
+  useEffect(() => {
+    try {
+      const app = initializeApp(firebaseConfig);
+      const authInstance = getAuth(app);
+      const dbInstance = getFirestore(app);
+      setDb(dbInstance);
+      setAuth(authInstance);
+
+      // Listen for auth state changes
+      const unsubscribe = onAuthStateChanged(authInstance, (currentUser) => {
+        if (currentUser) {
+          // A user is signed in
+          setUser(currentUser);
+          setIsLoggedIn(true);
+        } else {
+          // No user is signed in
+          setUser(null);
+          setIsLoggedIn(false);
+        }
+        setIsAuthReady(true);
+      });
+
+      // Attempt to sign in with the initial token or anonymously
+      const signIn = async () => {
+        try {
+          if (initialAuthToken) {
+            await signInWithCustomToken(authInstance, initialAuthToken);
+          } else {
+            await signInAnonymously(authInstance);
+          }
+        } catch (e) {
+          console.error("Firebase sign-in failed:", e);
+          setErrorMessage('Could not sign in automatically. Please try again.');
+        }
+      };
+      signIn();
+
+      // Clean up the auth listener
+      return () => unsubscribe();
+    } catch (e) {
+      console.error('Firebase initialization failed:', e);
+      setErrorMessage('Failed to initialize the app. Check console for details.');
+    }
+  }, [initialAuthToken, firebaseConfig]);
+
+  // Use a separate useEffect to fetch data after auth is ready
+  useEffect(() => {
+    if (isAuthReady && db) {
+      // Create or listen for the member count document
+      const memberCountDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'member_count', 'total');
+      const unsubscribe = onSnapshot(memberCountDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setMemberCount(data.count || 0);
+        } else {
+          // Initialize the document if it doesn't exist
+          setDoc(memberCountDocRef, { count: 0 });
+          setMemberCount(0);
+        }
+      }, (error) => {
+        console.error("Error listening to member count:", error);
+      });
+      return () => unsubscribe();
+    }
+  }, [isAuthReady, db, appId]);
+
+  // Handle user login
+  const handleLogin = async (email, password) => {
+    setErrorMessage('');
+    try {
+      // In a real app, you would use signInWithEmailAndPassword.
+      // For this demo, we'll just check against a mock user and assume success.
+      if (email === 'farmer@greenspark.com' && password === 'password123') {
+        const userDocRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'profile', 'details');
+        await setDoc(userDocRef, {
+          username: 'Farmer Joe',
+          age: 45,
+          phone: '123-456-7890',
+          mail: email,
+        }, { merge: true });
+
+        setIsLoggedIn(true);
+        setPage('main');
+        setSubPage('home');
+
+        // Increment the member count
+        const memberCountDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'member_count', 'total');
+        const docSnap = await getDoc(memberCountDocRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          await setDoc(memberCountDocRef, { count: data.count + 1 });
+        } else {
+          await setDoc(memberCountDocRef, { count: 1 });
+        }
+      } else {
+        setErrorMessage('Invalid email or password. Use farmer@greenspark.com and password123.');
+      }
+    } catch (e) {
+      setErrorMessage('Login failed. Please try again.');
+      console.error('Login error:', e);
+    }
+  };
+
+  // Handle user signup
+  const handleSignUp = async (email, password) => {
+    setErrorMessage('');
+    try {
+      // In a real app, you would use createUserWithEmailAndPassword.
+      // For this demo, we'll just assume a successful signup.
+      // We'll update the mock user's profile with the new email.
+      if (email && password) {
+        const userDocRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'profile', 'details');
+        await setDoc(userDocRef, {
+          username: 'New Farmer',
+          mail: email,
+        }, { merge: true });
+
+        setIsLoggedIn(true);
+        setPage('main');
+        setSubPage('home');
+
+        // Increment the member count
+        const memberCountDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'member_count', 'total');
+        const docSnap = await getDoc(memberCountDocRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          await setDoc(memberCountDocRef, { count: data.count + 1 });
+        } else {
+          await setDoc(memberCountDocRef, { count: 1 });
+        }
+
+      } else {
+        setErrorMessage('Please provide a valid email and password.');
+      }
+    } catch (e) {
+      setErrorMessage('Signup failed. Please try again.');
+      console.error('Signup error:', e);
+    }
+  };
+
+  const handleLogout = async () => {
+    setErrorMessage('');
+    try {
+      await signOut(auth);
+      setPage('landing');
+      setSubPage('home');
+    } catch (e) {
+      setErrorMessage('Logout failed.');
+      console.error('Logout error:', e);
+    }
+  };
+
+  // Render the current view based on the state
+  const renderView = () => {
+    switch (page) {
+      case 'landing':
+        return <LandingPage onLoginClick={() => setPage('login')} onSignUpClick={() => setPage('login')} />;
+      case 'login':
+        return <LoginSignUpPage onLogin={handleLogin} onSignUp={handleSignUp} onBack={() => setPage('landing')} errorMessage={errorMessage} />;
+      case 'main':
+        return <MainAppPage
+          user={user}
+          onLogout={handleLogout}
+          subPage={subPage}
+          setSubPage={setSubPage}
+          memberCount={memberCount}
+          db={db}
+          auth={auth}
+          appId={appId}
+        />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className={containerClass}>
+      {renderView()}
+    </div>
+  );
+}
+
+// Sub-components for each page/section
+
+const LandingPage = ({ onLoginClick, onSignUpClick }) => {
+  return (
+    <div className="flex flex-col items-center justify-center w-full min-h-screen bg-gray-50 text-gray-800">
+      <header className={headerClass}>
+        <div className={logoClass}>
+          {/* Logo with a simple leaf icon */}
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-green-500">
+            <path fillRule="evenodd" d="M12.963 2.222a.75.75 0 0 0-.926 0l-7.5 4.5A.75.75 0 0 0 4.5 7.5v9.75a.75.75 0 0 0 1.258.563l6.096-4.572 6.096 4.572A.75.75 0 0 0 19.5 17.25V7.5a.75.75 0 0 0-.537-.728l-7.5-4.5Z" clipRule="evenodd" />
+          </svg>
+          <span>GreenSpark</span>
+        </div>
+        <div className="flex space-x-4">
+          <button className={${buttonClass} bg-green-500} onClick={onLoginClick}>Login</button>
+          <button className={${buttonClass} bg-blue-500} onClick={onSignUpClick}>Sign Up</button>
+        </div>
+      </header>
+
+      <main className="flex flex-col md:flex-row items-center justify-center w-full max-w-7xl mx-auto flex-1 mt-8 md:mt-0 p-4 md:p-8">
+        <div className="text-center md:text-left md:w-1/2">
+          <h1 className="text-4xl md:text-6xl font-extrabold text-green-800 leading-tight">Welcome to GreenSpark</h1>
+          <p className="text-lg md:text-xl font-medium text-gray-600 mt-4">Empowering the farmer – cultivating the future</p>
+        </div>
+
+        {/* Farmer image and details section */}
+        <div className="relative mt-8 md:mt-0 md:w-1/2 flex justify-center md:justify-end">
+          {/* Farmer image as a background element with an overlay for text */}
+          <div className="relative w-full max-w-md h-96 rounded-3xl overflow-hidden shadow-2xl">
+            <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: 'url(https://placehold.co/600x400/86efac/ffffff?text=Farmer+Image)' }}></div>
+            <div className="absolute inset-0 bg-green-900 opacity-60"></div>
+            <div className="absolute bottom-0 right-0 p-6 text-white text-right z-10">
+              <h3 className="text-lg font-bold">Addressing Key Challenges</h3>
+              <p className="text-sm mt-2">
+                Farmers face many challenges today, from climate change and resource management to market access and financial security.
+                GreenSpark provides the tools and information needed to overcome these obstacles and thrive.
+              </p>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+const LoginSignUpPage = ({ onLogin, onSignUp, onBack, errorMessage }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLogin, setIsLogin] = useState(true);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (isLogin) {
+      onLogin(email, password);
+    } else {
+      onSignUp(email, password);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center w-full min-h-screen bg-gray-50 text-gray-800 p-4">
+      <div className={${cardClass} w-full max-w-md}>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-3xl font-bold text-green-700">{isLogin ? 'Login' : 'Sign Up'}</h2>
+          <button onClick={onBack} className="text-gray-500 hover:text-green-500 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+              <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-4.28 9.22a.75.75 0 0 0 0 1.06l3 3a.75.75 0 1 0 1.06-1.06l-1.72-1.72h5.69a.75.75 0 0 0 0-1.5h-5.69l1.72-1.72a.75.75 0 0 0-1.06-1.06l-3 3Z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+        {errorMessage && <p className="text-red-500 text-sm mb-4">{errorMessage}</p>}
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-4">
+            <input
+              type="email"
+              placeholder="Email"
+              className={inputClass}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              className={inputClass}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
+          <button type="submit" className={${formButtonClass} bg-green-500}>
+            {isLogin ? 'Login' : 'Sign Up'}
+          </button>
+        </form>
+        <p className="text-center mt-4 text-sm text-gray-600">
+          {isLogin ? "Don't have an account?" : "Already have an account?"}
+          <button onClick={() => setIsLogin(!isLogin)} className="text-green-600 font-semibold ml-1 hover:underline">
+            {isLogin ? 'Sign Up' : 'Login'}
+          </button>
+        </p>
+      </div>
+    </div>
+  );
+};
+
+const MainAppPage = ({ user, onLogout, subPage, setSubPage, memberCount, db, auth, appId }) => {
+  const renderSection = () => {
+    switch (subPage) {
+      case 'home':
+        return <HomeSection setSubPage={setSubPage} memberCount={memberCount} />;
+      case 'about':
+        return <AboutSection onBack={() => setSubPage('home')} />;
+      case 'contact':
+        return <ContactSection onBack={() => setSubPage('home')} />;
+      case 'profile':
+        return <ProfileSection user={user} db={db} auth={auth} appId={appId} onBack={() => setSubPage('home')} />;
+      case 'crop-details':
+        return <CropDetailsSection onBack={() => setSubPage('home')} />;
+      case 'weather':
+        return <WeatherSection onBack={() => setSubPage('home')} />;
+      case 'pesticides':
+        return <PesticidesSection onBack={() => setSubPage('home')} />;
+      case 'investment-house':
+        return <InvestmentHouseSection onBack={() => setSubPage('home')} />;
+      default:
+        return <HomeSection setSubPage={setSubPage} memberCount={memberCount} />;
+    }
+  };
+
+  return (
+    <div className="flex flex-col w-full min-h-screen">
+      <header className={headerClass}>
+        <div className="flex items-center space-x-6">
+          <div className={logoClass}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-green-500">
+              <path fillRule="evenodd" d="M12.963 2.222a.75.75 0 0 0-.926 0l-7.5 4.5A.75.75 0 0 0 4.5 7.5v9.75a.75.75 0 0 0 1.258.563l6.096-4.572 6.096 4.572A.75.75 0 0 0 19.5 17.25V7.5a.75.75 0 0 0-.537-.728l-7.5-4.5Z" clipRule="evenodd" />
+            </svg>
+            <span>GreenSpark</span>
+          </div>
+          <nav className="hidden md:flex space-x-4">
+            {['Home', 'About', 'Contact', 'Profile'].map(item => (
+              <button
+                key={item}
+                className={py-2 px-4 rounded-full font-semibold transition-colors duration-200 ${subPage === item.toLowerCase() ? 'bg-green-500 text-white' : 'text-gray-600 hover:bg-gray-100'}}
+                onClick={() => setSubPage(item.toLowerCase())}
+              >
+                {item}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 text-gray-700">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+              <path fillRule="evenodd" d="M7.5 6a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0ZM3.751 20.105a8.25 8.25 0 0 1 16.498 0 .75.75 0 0 1-.749.792H4.502a.75.75 0 0 1-.75-.792Z" clipRule="evenodd" />
+            </svg>
+            <span>{user?.displayName || 'User'}</span>
+          </div>
+          <button className={${buttonClass} bg-red-500} onClick={onLogout}>Logout</button>
+        </div>
+      </header>
+
+      <main className="flex-1 w-full max-w-7xl mx-auto py-8 px-6 md:px-8 relative">
+        {renderSection()}
+        <Chatbot />
+      </main>
+    </div>
+  );
+};
+
+const HomeSection = ({ setSubPage, memberCount }) => {
+  return (
+    <div className="relative w-full h-full min-h-[600px] flex flex-col justify-center items-center rounded-3xl overflow-hidden p-6 bg-gray-100 shadow-inner">
+      {/* Background with a semi-transparent logo */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-80 h-80 text-green-500">
+          <path fillRule="evenodd" d="M12.963 2.222a.75.75 0 0 0-.926 0l-7.5 4.5A.75.75 0 0 0 4.5 7.5v9.75a.75.75 0 0 0 1.258.563l6.096-4.572 6.096 4.572A.75.75 0 0 0 19.5 17.25V7.5a.75.75 0 0 0-.537-.728l-7.5-4.5Z" clipRule="evenodd" />
+        </svg>
+      </div>
+
+      <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
+        {/* Main action buttons */}
+        <button onClick={() => setSubPage('crop-details')} className={${cardClass} bg-green-700 text-white}>
+          <h3 className="text-xl font-bold">Crop Details</h3>
+          <p className="text-sm mt-2 opacity-80">Get information on water, soil, and fertilizers.</p>
+        </button>
+        <button onClick={() => setSubPage('weather')} className={${cardClass} bg-blue-700 text-white}>
+          <h3 className="text-xl font-bold">Weather</h3>
+          <p className="text-sm mt-2 opacity-80">Real-time weather updates and alerts.</p>
+        </button>
+        <button onClick={() => setSubPage('pesticides')} className={${cardClass} bg-gray-700 text-white}>
+          <h3 className="text-xl font-bold">Pesticides</h3>
+          <p className="text-sm mt-2 opacity-80">Find suitable pesticides and fertilizers for your crops.</p>
+        </button>
+        <button onClick={() => setSubPage('investment-house')} className={${cardClass} bg-amber-700 text-white}>
+          <h3 className="text-xl font-bold">Investment House</h3>
+          <p className="text-sm mt-2 opacity-80">Access loan and insurance details.</p>
+        </button>
+
+        {/* Countdown Widget */}
+        <div className="md:col-span-2 flex flex-col items-center mt-8">
+          <CircularProgress value={memberCount} maxValue={1000} label="Members" />
+          <p className="text-center text-sm text-gray-600 mt-4">
+            Total number of registered members on our platform, growing daily!
+          </p>
+        </div>
+      </div>
+
+      {/* Bottom corner features */}
+      <div className="absolute bottom-4 left-4 flex flex-col space-y-4 z-20">
+        <button className="bg-white p-3 rounded-full shadow-lg hover:scale-110 transition-transform">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-gray-500">
+            <path d="M4.5 6.375a.75.75 0 0 0-1.5 0v3.25L4.5 9.75v-3.375ZM12 6.375a.75.75 0 0 0-1.5 0v3.25L12 9.75v-3.375ZM20.25 6.375a.75.75 0 0 0-1.5 0v3.25L20.25 9.75v-3.375Z" />
+            <path fillRule="evenodd" d="M11.97 2.454a.75.75 0 0 1 .562 0l4.582 2.291c.066.033.132.072.192.118a3 3 0 0 1 1.07 1.636 2.585 2.585 0 0 0-.809-.158 2.569 2.569 0 0 0-1.95.845 2.569 2.569 0 0 1-1.95.845 2.569 2.569 0 0 1-1.95-.845 2.569 2.569 0 0 1-1.95-.845 2.569 2.569 0 0 1-1.95.845 2.569 2.569 0 0 1-1.95-.845A2.585 2.585 0 0 0 4.5 8.169c-.06.046-.126.085-.192.118l-4.582 2.29A.75.75 0 0 1 0 11.25V18a1.5 1.5 0 0 0 1.5 1.5h19.5a1.5 1.5 0 0 0 1.5-1.5v-6.75a.75.75 0 0 1 .416-.683l4.582-2.291a.75.75 0 0 1 .562 0l4.582-2.291A.75.75 0 0 0 24 4.195V3.75a1.5 1.5 0 0 0-1.5-1.5H1.5a1.5 1.5 0 0 0-1.5 1.5v.445a.75.75 0 0 0 .393.682Z" clipRule="evenodd" />
+          </svg>
+        </button>
+        <button onClick={() => setSubPage('settings')} className="bg-white p-3 rounded-full shadow-lg hover:scale-110 transition-transform">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-gray-500">
+            <path fillRule="evenodd" d="M11.078 2.25c-.917 0-1.699.66-1.85 1.565L8.25 4.772a4.484 4.484 0 0 0-1.233.756l-.398-.397a.75.75 0 0 0-1.06 0l-1.897 1.897a.75.75 0 0 0 0 1.06l.397.398c-.28.867-.51 1.78-.67 2.723H2.251a.75.75 0 0 0-.75.75v1.5c0 .414.336.75.75.75h1.838c.16.943.39 1.856.67 2.723l-.398.397a.75.75 0 0 0 0 1.06l1.897 1.897a.75.75 0 0 0 1.06 0l.397-.398c.439.316.906.58 1.401.756l-.152 1.25a.75.75 0 0 0 .749.75h1.5a.75.75 0 0 0 .749-.75l-.152-1.25a4.484 4.484 0 0 0 1.233-.756l.398.397a.75.75 0 0 0 1.06 0l1.897-1.897a.75.75 0 0 0 0-1.06l-.397-.398a4.484 4.484 0 0 0 1.233-.756l.152 1.25a.75.75 0 0 0 .749.75h1.5a.75.75 0 0 0 .749-.75l.152-1.25a4.484 4.484 0 0 0 1.233.756l.397.398a.75.75 0 0 0 1.06 0l1.897-1.897a.75.75 0 0 0 0-1.06l-.398-.397a4.484 4.484 0 0 0 .756-1.233l1.252-.152c.414-.047.75-.383.75-.75v-1.5a.75.75 0 0 0-.75-.75h-1.838a4.484 4.484 0 0 0-.67-2.723l.397-.398a.75.75 0 0 0 0-1.06l-1.897-1.897a.75.75 0 0 0-1.06 0l-.398.397a4.484 4.484 0 0 0-1.233-.756l.152-1.25a.75.75 0 0 0-.749-.75h-1.5a.75.75 0 0 0-.749.75l-.152 1.25a4.484 4.484 0 0 0-1.233.756Z" clipRule="evenodd" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const AboutSection = ({ onBack }) => {
+  return (
+    <div className="bg-white rounded-xl shadow-xl p-8 max-w-3xl mx-auto">
+      <div className="flex items-center mb-6">
+        <button onClick={onBack} className="text-gray-500 hover:text-green-500 transition-colors p-2 rounded-full">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+            <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-4.28 9.22a.75.75 0 0 0 0 1.06l3 3a.75.75 0 1 0 1.06-1.06l-1.72-1.72h5.69a.75.75 0 0 0 0-1.5h-5.69l1.72-1.72a.75.75 0 0 0-1.06-1.06l-3 3Z" clipRule="evenodd" />
+          </svg>
+        </button>
+        <h2 className="text-3xl font-bold text-green-700 mb-4 ml-4">About GreenSpark</h2>
+      </div>
+      <p className="text-gray-700 mb-4">
+        GreenSpark is a comprehensive digital platform designed to support and empower farmers. We believe that by providing
+        accessible information and innovative tools, we can help agricultural communities thrive in a changing world.
+      </p>
+      <p className="text-gray-700 mb-4">
+        Our mission is to bridge the gap between traditional farming practices and modern technology. We offer
+        a one-stop solution for vital agricultural needs, from real-time weather alerts and crop management advice to
+        financial support resources.
+      </p>
+      <p className="text-gray-700">
+        Our team is dedicated to building a sustainable future for agriculture, one farmer at a time.
+      </p>
+    </div>
+  );
+};
+
+const ContactSection = ({ onBack }) => {
+  return (
+    <div className="bg-white rounded-xl shadow-xl p-8 max-w-3xl mx-auto">
+      <div className="flex items-center mb-6">
+        <button onClick={onBack} className="text-gray-500 hover:text-green-500 transition-colors p-2 rounded-full">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+            <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-4.28 9.22a.75.75 0 0 0 0 1.06l3 3a.75.75 0 1 0 1.06-1.06l-1.72-1.72h5.69a.75.75 0 0 0 0-1.5h-5.69l1.72-1.72a.75.75 0 0 0-1.06-1.06l-3 3Z" clipRule="evenodd" />
+          </svg>
+        </button>
+        <h2 className="text-3xl font-bold text-green-700 mb-4 ml-4">Contact Us</h2>
+      </div>
+      <p className="text-gray-700 mb-6">
+        Have a question or need support? Fill out the details below and we'll get back to you as soon as possible.
+      </p>
+      <form className="space-y-4">
+        <input type="text" placeholder="Your Name" className={inputClass} />
+        <input type="email" placeholder="Your Email" className={inputClass} />
+        <textarea placeholder="Your Query" className={${inputClass} h-32} />
+        <button type="submit" className={${formButtonClass} bg-green-500}>Submit Query</button>
+      </form>
+      <div className="mt-8 text-center text-gray-600">
+        <p>Alternatively, you can reach us directly:</p>
+        <div className="flex justify-center space-x-6 mt-4">
+          <a href="#" className="text-green-500 hover:text-green-700 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
+              <path d="M.057 20.895l1.916-7.669c.123-.503-.021-1.026-.445-1.391l-4.707-4.484c-.451-.43-.464-1.144-.029-1.58L2.49 1.583a.75.75 0 0 1 1.06 0L8.033 6.096c.16.16.42.16.58 0L14.033 1.583a.75.75 0 0 1 1.06 0l5.804 5.804a.75.75 0 0 1 0 1.06l-4.707 4.484c-.424.365-.568.888-.445 1.391L18.42 20.895c.123.503.021 1.026-.445 1.391l-4.707 4.484c-.451.43-.464 1.144-.029 1.58L.49 22.844a.75.75 0 0 1-.433-.627l1.916-7.669Zm4.973-1.077c.307.28.468.65.468 1.04v.25c0 .39-.161.76-.468 1.04a.75.75 0 0 1-1.06 0L.933 16.096a.75.75 0 0 1 0-1.06L4.41 12.55c.307-.28.468-.65.468-1.04V11.25a.75.75 0 0 1 1.06 0l4.477 4.477a.75.75 0 0 1 0 1.06L5.029 19.818Z" />
+            </svg>
+          </a>
+          <a href="#" className="text-green-500 hover:text-green-700 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
+              <path d="M19.5 2.25c-1.01 0-1.78.74-2.58.74-1.18 0-2.22-.5-3.37-1.42A3 3 0 0 0 12 0c-1.12 0-2.18.91-3.37 1.42-1.15.92-2.19 1.42-3.37 1.42-1.01 0-1.78-.74-2.58-.74a.75.75 0 0 0-.75.75V21.5c0 .41.34.75.75.75h1.5c.41 0 .75-.34.75-.75V19.5h1.5v2.25c0 .41.34.75.75.75H12v-2.25h1.5v2.25h1.5c.41 0 .75-.34.75-.75V19.5h1.5v2.25c0 .41.34.75.75.75h1.5c.41 0 .75-.34.75-.75V3c0-.41-.34-.75-.75-.75ZM12 4a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Z" />
+            </svg>
+          </a>
+          <a href="#" className="text-green-500 hover:text-green-700 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
+              <path d="M.75 7.5a.75.75 0 0 0-.75.75V19.5c0 .414.336.75.75.75h22.5a.75.75 0 0 0 .75-.75V8.25a.75.75 0 0 0-.75-.75H.75ZM15 7.5a.75.75 0 0 0-.75-.75H9.75a.75.75 0 0 0-.75.75v3a.75.75 0 0 0 .75.75h4.5a.75.75 0 0 0 .75-.75v-3Z" />
+            </svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ProfileSection = ({ user, db, auth, appId, onBack }) => {
+  const [profileData, setProfileData] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [updatedData, setUpdatedData] = useState({ username: '', age: '', phone: '', mail: '' });
+
+  // Fetch user profile data from Firestore on component load
+  useEffect(() => {
+    if (user && db && auth) {
+      const userDocRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'profile', 'details');
+      const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setProfileData(data);
+          setUpdatedData(data);
+        } else {
+          console.log("No profile data found!");
+        }
+      }, (error) => {
+        console.error("Error listening to profile data:", error);
+      });
+      return () => unsubscribe();
+    }
+  }, [user, db, auth, appId]);
+
+  const handleUpdate = async () => {
+    if (user && db && auth) {
+      try {
+        const userDocRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'profile', 'details');
+        await setDoc(userDocRef, updatedData, { merge: true });
+        setEditMode(false);
+      } catch (e) {
+        console.error("Error updating document: ", e);
+      }
+    }
+  };
+
+  if (!profileData) {
+    return <div className="text-center text-gray-500">Loading profile...</div>;
+  }
+
+  return (
+    <div className="bg-white rounded-xl shadow-xl p-8 max-w-2xl mx-auto">
+      <div className="flex items-center mb-6">
+        <button onClick={onBack} className="text-gray-500 hover:text-green-500 transition-colors p-2 rounded-full">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+            <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-4.28 9.22a.75.75 0 0 0 0 1.06l3 3a.75.75 0 1 0 1.06-1.06l-1.72-1.72h5.69a.75.75 0 0 0 0-1.5h-5.69l1.72-1.72a.75.75 0 0 0-1.06-1.06l-3 3Z" clipRule="evenodd" />
+          </svg>
+        </button>
+        <h2 className="text-3xl font-bold text-green-700 mb-6 ml-4">Profile</h2>
+      </div>
+      <div className="flex flex-col items-center">
+        <div className="w-24 h-24 rounded-full bg-green-500 flex items-center justify-center text-white text-4xl mb-4 shadow-inner">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-16 h-16">
+            <path fillRule="evenodd" d="M7.5 6a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0ZM3.751 20.105a8.25 8.25 0 0 1 16.498 0 .75.75 0 0 1-.749.792H4.502a.75.75 0 0 1-.75-.792Z" clipRule="evenodd" />
+          </svg>
+        </div>
+      </div>
+      <div className="space-y-4">
+        {Object.entries(profileData).map(([key, value]) => (
+          <div key={key} className="flex items-center bg-gray-100 p-4 rounded-xl">
+            <span className="font-semibold text-gray-600 capitalize w-1/3">{key}:</span>
+            {editMode ? (
+              <input
+                type={key === 'mail' ? 'email' : 'text'}
+                className="w-2/3 p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-1 focus:ring-green-500"
+                value={updatedData[key] || ''}
+                onChange={(e) => setUpdatedData({ ...updatedData, [key]: e.target.value })}
+                readOnly={key === 'mail'}
+              />
+            ) : (
+              <span className="text-gray-800 w-2/3">{value}</span>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end space-x-4 mt-6">
+        {editMode ? (
+          <>
+            <button onClick={() => setEditMode(false)} className={${buttonClass} bg-gray-500}>Cancel</button>
+            <button onClick={handleUpdate} className={${buttonClass} bg-green-500}>Save</button>
+          </>
+        ) : (
+          <button onClick={() => setEditMode(true)} className={${buttonClass} bg-green-500}>Edit Profile</button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const CropDetailsSection = ({ onBack }) => (
+  <div className="bg-white rounded-xl shadow-xl p-8 max-w-3xl mx-auto">
+    <div className="flex items-center mb-6">
+      <button onClick={onBack} className="text-gray-500 hover:text-green-500 transition-colors p-2 rounded-full">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+          <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-4.28 9.22a.75.75 0 0 0 0 1.06l3 3a.75.75 0 1 0 1.06-1.06l-1.72-1.72h5.69a.75.75 0 0 0 0-1.5h-5.69l1.72-1.72a.75.75 0 0 0-1.06-1.06l-3 3Z" clipRule="evenodd" />
+          </svg>
+        </button>
+        <h2 className="text-3xl font-bold text-green-700 ml-4">Crop Details</h2>
+      </div>
+      <p className="text-gray-700 mb-6">
+        Search for a crop to get detailed information on its requirements.
+      </p>
+      <input type="text" placeholder="Search for a crop..." className={inputClass} />
+      <div className="mt-6 space-y-4">
+        <div className="bg-gray-100 p-4 rounded-lg shadow">
+          <h4 className="font-bold text-lg text-green-800">Wheat</h4>
+          <p className="text-sm mt-1">Water: Low to moderate</p>
+          <p className="text-sm">Soil: Loamy soil with good drainage</p>
+          <p className="text-sm">Fertilizers: Nitrogen, Phosphorus, Potassium</p>
+          <p className="text-sm">Pesticides: Common rust and aphids</p>
+        </div>
+        <div className="bg-gray-100 p-4 rounded-lg shadow">
+          <h4 className="font-bold text-lg text-green-800">Rice</h4>
+          <p className="text-sm mt-1">Water: High, requires flooding</p>
+          <p className="text-sm">Soil: Clayey or alluvial soil</p>
+          <p className="text-sm">Fertilizers: Nitrogen, Zinc, Sulfur</p>
+          <p className="text-sm">Pesticides: Rice blast and brown planthopper</p>
+        </div>
+      </div>
+    </div>
+);
+
+const WeatherSection = ({ onBack }) => (
+  <div className="bg-white rounded-xl shadow-xl p-8 max-w-3xl mx-auto">
+    <div className="flex items-center mb-6">
+      <button onClick={onBack} className="text-gray-500 hover:text-green-500 transition-colors p-2 rounded-full">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+          <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-4.28 9.22a.75.75 0 0 0 0 1.06l3 3a.75.75 0 1 0 1.06-1.06l-1.72-1.72h5.69a.75.75 0 0 0 0-1.5h-5.69l1.72-1.72a.75.75 0 0 0-1.06-1.06l-3 3Z" clipRule="evenodd" />
+          </svg>
+        </button>
+        <h2 className="text-3xl font-bold text-green-700 ml-4">Weather Forecast</h2>
+      </div>
+      <p className="text-gray-700 mb-6">
+        Get up-to-date weather information for your location and receive alerts for severe weather conditions.
+      </p>
+      <div className="bg-blue-100 p-4 rounded-xl border border-blue-200">
+        <p className="font-semibold text-lg text-blue-800">Current Weather: Sunny, 28°C</p>
+        <p className="text-sm text-blue-700 mt-1">Location: Your Current Location</p>
+        <div className="mt-4">
+          <h4 className="font-bold text-blue-800">Alerts:</h4>
+          <div className="bg-red-50 p-3 rounded-lg border-l-4 border-red-500 mt-2 shadow-sm">
+            <p className="font-semibold text-red-800">FLOOD ADVISORY IN EFFECT</p>
+            <p className="text-red-700 text-sm mt-1">
+              Heavy rainfall expected in the next 24 hours. Recommended action: Ensure proper drainage and secure low-lying crops.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+);
+
+const PesticidesSection = ({ onBack }) => (
+  <div className="bg-white rounded-xl shadow-xl p-8 max-w-3xl mx-auto">
+    <div className="flex items-center mb-6">
+      <button onClick={onBack} className="text-gray-500 hover:text-green-500 transition-colors p-2 rounded-full">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+          <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-4.28 9.22a.75.75 0 0 0 0 1.06l3 3a.75.75 0 1 0 1.06-1.06l-1.72-1.72h5.69a.75.75 0 0 0 0-1.5h-5.69l1.72-1.72a.75.75 0 0 0-1.06-1.06l-3 3Z" clipRule="evenodd" />
+          </svg>
+        </button>
+        <h2 className="text-3xl font-bold text-green-700 ml-4">Pesticides & Fertilizers</h2>
+      </div>
+      <p className="text-gray-700 mb-6">
+        Find information on the right pesticides and fertilizers for your crops and soil.
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-gray-100 p-4 rounded-lg shadow">
+          <h4 className="font-bold text-lg text-gray-800">Organic Fertilizers</h4>
+          <p className="text-sm mt-1">
+            Information about compost, manure, and other organic options to enrich your soil naturally.
+          </p>
+        </div>
+        <div className="bg-gray-100 p-4 rounded-lg shadow">
+          <h4 className="font-bold text-lg text-gray-800">Synthetic Pesticides</h4>
+          <p className="text-sm mt-1">
+            Details on common chemical pesticides, their uses, and safety precautions.
+          </p>
+        </div>
+      </div>
+    </div>
+);
+
+const InvestmentHouseSection = ({ onBack }) => (
+  <div className="bg-white rounded-xl shadow-xl p-8 max-w-3xl mx-auto">
+    <div className="flex items-center mb-6">
+      <button onClick={onBack} className="text-gray-500 hover:text-green-500 transition-colors p-2 rounded-full">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+          <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-4.28 9.22a.75.75 0 0 0 0 1.06l3 3a.75.75 0 1 0 1.06-1.06l-1.72-1.72h5.69a.75.75 0 0 0 0-1.5h-5.69l1.72-1.72a.75.75 0 0 0-1.06-1.06l-3 3Z" clipRule="evenodd" />
+          </svg>
+        </button>
+        <h2 className="text-3xl font-bold text-green-700 ml-4">Investment House</h2>
+      </div>
+      <p className="text-gray-700 mb-6">
+        Resources to help you secure your financial future, including low-interest loans and crop insurance.
+      </p>
+      <div className="space-y-6">
+        <div className="bg-yellow-100 p-4 rounded-xl border border-yellow-200 shadow">
+          <h4 className="font-bold text-xl text-yellow-800">Low-Interest Loans</h4>
+          <p className="text-sm mt-1 text-yellow-700">
+            Explore partnerships with banks offering special loan schemes for agricultural development.
+          </p>
+        </div>
+        <div className="bg-blue-100 p-4 rounded-xl border border-blue-200 shadow">
+          <h4 className="font-bold text-xl text-blue-800">Crop Insurance</h4>
+          <p className="text-sm mt-1 text-blue-700">
+            Protect your livelihood with details on insurance plans that cover crop failure due to unforeseen events.
+          </p>
+        </div>
+      </div>
+    </div>
+);
+
+// New Chatbot component
+const Chatbot = () => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+
+    const userMessage = { sender: 'user', text: input.trim() };
+    setMessages((prev) => [...prev, userMessage]);
+    setInput('');
+    setIsLoading(true);
+
+    const prompt = You are an expert AI agricultural assistant named GreenBot. Your purpose is to provide helpful and friendly advice to farmers. Keep your responses concise and to the point. Answer the following user query: "${userMessage.text}";
+    const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+    const payload = { contents: chatHistory };
+    const apiKey = "";
+    const apiUrl = https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey};
+
+    let retries = 0;
+    const maxRetries = 5;
+    const initialDelay = 1000;
+
+    const attemptSend = async () => {
+      try {
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          if (response.status === 429 && retries < maxRetries) {
+            const delay = initialDelay * Math.pow(2, retries);
+            retries++;
+            setTimeout(attemptSend, delay);
+            return;
+          }
+          throw new Error(API error: ${response.statusText});
+        }
+
+        const result = await response.json();
+        if (result.candidates && result.candidates.length > 0 &&
+            result.candidates[0].content && result.candidates[0].content.parts &&
+            result.candidates[0].content.parts.length > 0) {
+          const text = result.candidates[0].content.parts[0].text;
+          const botMessage = { sender: 'bot', text: text };
+          setMessages((prev) => [...prev, botMessage]);
+        } else {
+          setMessages((prev) => [...prev, { sender: 'bot', text: "I'm sorry, I couldn't get a response." }]);
+        }
+      } catch (error) {
+        console.error('Fetch error:', error);
+        setMessages((prev) => [...prev, { sender: 'bot', text: "An error occurred. Please try again later." }]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    attemptSend();
+  };
+
+  return (
+    <div className="fixed bottom-4 right-4 z-50">
+      {!isOpen && (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="bg-green-600 p-4 rounded-full text-white shadow-xl hover:scale-110 transition-transform"
+          aria-label="Open Chatbot"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
+            <path d="M4.913 2.658c3.123-1.024 6.368-.908 9.427.135C18.663 4.145 21 7.29 21 10.796c0 3.506-2.337 6.651-6.66 8.003-.95.28-1.868.511-2.784.694V19.5a3 3 0 0 1-3 3c-1.746 0-3.41-.601-4.908-1.622A3 3 0 0 1 3 17.58v-4.636A11.957 11.957 0 0 1 3.5 12c0-2.05.748-3.966 2.083-5.412a10.984 10.984 0 0 1 1.792-1.725Zm.787 1.157a.75.75 0 0 1 .714-.851 1.5 1.5 0 0 0 1.428 0c.307-.101.59-.189.85-.262.355-.098.694-.148 1.022-.166.248-.013.493-.013.738 0A12.545 12.545 0 0 1 12 4.5c.245 0 .49-.005.738.014.328.018.667.068 1.022.166.26.073.543.16.85.262a1.5 1.5 0 0 0 1.428 0 .75.75 0 0 1 .714.852c-.172.585-.35 1.155-.536 1.696A10.514 10.514 0 0 0 12 7.5c-1.077 0-2.126.11-3.14.322a10.514 10.514 0 0 0-3.23 2.144c-.186.541-.364 1.111-.536 1.696ZM5.98 12.001c.228 0 .445.02.658.058.468.083.923.197 1.365.344A9.998 9.998 0 0 0 12 14.25c1.015 0 2.003-.13 2.949-.387a9.998 9.998 0 0 0 1.365-.344c.213-.038.43-.058.658-.058A10.528 10.528 0 0 1 19.5 15a10.529 10.529 0 0 1-13.52-.924c.004-.265.006-.531.006-.796Zm-.214 3.79c.045-.274.089-.548.132-.82.164-1.045.54-2.033 1.109-2.946a.75.75 0 0 1 1.258.857c-.43.7-.723 1.487-.88 2.34-.04.22-.058.441-.059.662v.006a.75.75 0 0 1-.84.708l-1.071-.161ZM12 17.25c-.245 0-.48-.005-.705-.015a11.996 11.996 0 0 1-.689-.046c-.035-.002-.069-.004-.103-.006A10.529 10.529 0 0 1 4.5 18c0 1.087.643 2.057 1.613 2.664a4.485 4.485 0 0 0 2.888 1.144A4.525 4.525 0 0 0 12 21.75a4.525 4.525 0 0 0 2.999-1.053 4.485 4.485 0 0 0 2.888-1.144c.97-.607 1.613-1.577 1.613-2.664A10.529 10.529 0 0 1 12 17.25ZM18.064 16.208a.75.75 0 0 1-1.258.857c-.569-.913-.945-1.9-.99-2.946-.04-.22-.058-.441-.059-.662v.006a.75.75 0 0 1 .84-.708l1.071-.161c.045.274.089.548.132.82.164 1.045.54 2.033 1.109 2.946Z" />
+          </svg>
+        </button>
+      )}
+
+      {isOpen && (
+        <div className="fixed bottom-4 right-4 w-80 h-[400px] bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden">
+          {/* Header */}
+          <div className="bg-green-600 text-white p-4 flex items-center justify-between">
+            <h3 className="font-bold">GreenBot</h3>
+            <button onClick={() => setIsOpen(false)} className="text-white hover:text-gray-200">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+                <path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {messages.map((msg, index) => (
+              <div key={index} className={flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}}>
+                <div
+                  className={`max-w-[75%] p-3 rounded-xl shadow-sm ${
+                    msg.sender === 'user' ? 'bg-blue-500 text-white rounded-br-none' : 'bg-gray-200 text-gray-800 rounded-bl-none'
+                  }`}
+                >
+                  {msg.text}
+                </div>
+              </div>
+            ))}
+            {isLoading && (
+              <div className="flex justify-start">
+                <div className="bg-gray-200 text-gray-800 p-3 rounded-xl rounded-bl-none">
+                  <div className="flex space-x-2">
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse"></div>
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse delay-150"></div>
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse delay-300"></div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          {/* Input */}
+          <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-200">
+            <div className="flex space-x-2">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask a question..."
+                className="flex-1 p-3 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="bg-green-600 text-white p-3 rounded-full hover:bg-green-700 disabled:bg-gray-400 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+                  <path d="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.981.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405Z" />
+                </svg>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+};
