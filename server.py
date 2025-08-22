@@ -1,3 +1,4 @@
+pip install Flask
 # server.py
 # A conceptual Python server using Flask for the GreenSpark application.
 # This file demonstrates how a backend could handle API requests and database interactions.
