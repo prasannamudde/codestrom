@@ -1,0 +1,196 @@
+/* style.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+body {
+    font-family: 'Inter', sans-serif;
+}
+
+/* Base styling from Tailwind classes */
+.container-class {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1rem;
+    transition-property: background-color, color;
+    transition-duration: 300ms;
+}
+
+.header-class {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 80rem; /* w-full max-w-7xl */
+    margin-left: auto;
+    margin-right: auto;
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+    background-color: #ffffff;
+    border-radius: 0.75rem; /* rounded-xl */
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    margin-top: 1rem;
+}
+
+.logo-class {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #166534; /* text-green-700 */
+    font-weight: 700; /* font-bold */
+    font-size: 1.25rem; /* text-xl */
+}
+
+.button-class {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-radius: 9999px; /* rounded-full */
+    color: #ffffff;
+    font-weight: 600; /* font-semibold */
+    transition-property: transform;
+    transition-duration: 200ms;
+    transform: scale(1);
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    cursor: pointer;
+}
+
+.button-class:hover {
+    transform: scale(1.05);
+}
+
+.card-class {
+    background-color: #ffffff;
+    border-radius: 0.75rem; /* rounded-xl */
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    padding: 2rem;
+    transition-property: transform;
+    transition-duration: 300ms;
+    transform: scale(1);
+}
+
+.card-class:hover {
+    transform: scale(1.05);
+}
+
+.input-class {
+    width: 100%;
+    padding: 0.75rem;
+    border-radius: 0.75rem;
+    border: 1px solid #d1d5db;
+    background-color: #ffffff;
+    color: #111827;
+    transition-property: border-color, background-color, color;
+    transition-duration: 200ms;
+}
+
+.input-class:focus {
+    outline: none;
+    border-color: #22c55e;
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.5);
+}
+
+.form-button-class {
+    width: 100%;
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+    margin-top: 1rem;
+    border-radius: 0.75rem;
+    color: #ffffff;
+    font-weight: 700;
+    transition-property: transform, background-color;
+    transition-duration: 200ms;
+    transform: scale(1);
+    cursor: pointer;
+}
+
+.form-button-class:hover {
+    transform: scale(1.05);
+}
+
+/* Dark mode styling */
+body.dark {
+    background-color: #111827;
+    color: #f3f4f6;
+}
+
+body.dark .header-class {
+    background-color: #1f2937;
+    color: #f3f4f6;
+}
+
+body.dark .logo-class {
+    color: #4ade80; /* text-green-400 */
+}
+
+body.dark .card-class {
+    background-color: #1f2937;
+    color: #f3f4f6;
+}
+
+body.dark .input-class {
+    background-color: #374151;
+    color: #f3f4f6;
+    border-color: #4b5563;
+}
+
+body.dark .input-class::placeholder {
+    color: #9ca3af;
+}
+
+/* Specific section dark mode overrides */
+body.dark .bg-gray-100 {
+    background-color: #1f2937;
+}
+
+body.dark .text-gray-800 {
+    color: #f3f4f6;
+}
+
+body.dark .text-gray-600 {
+    color: #d1d5db;
+}
+
+body.dark .text-green-800 {
+    color: #86efac;
+}
+
+body.dark .bg-red-50 {
+    background-color: #450a0a;
+}
+body.dark .text-red-800 {
+    color: #fca5a5;
+}
+body.dark .border-red-500 {
+    border-color: #ef4444;
+}
+
+body.dark .bg-blue-100 {
+    background-color: #0c4a6e;
+}
+body.dark .text-blue-800 {
+    color: #93c5fd;
+}
+
+body.dark .bg-green-100 {
+    background-color: #15803d;
+}
+body.dark .text-green-700 {
+    color: #d1fae5;
+}
+body.dark .text-green-600 {
+    color: #6ee7b7;
+}
+
+body.dark .bg-yellow-100 {
+    background-color: #713f12;
+}
+body.dark .text-yellow-800 {
+    color: #fcd34d;
+}
+body.dark .border-yellow-200 {
+    border-color: #fcd34d;
+}
